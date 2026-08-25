@@ -1,0 +1,17 @@
+{
+  "name": "jiuyan-mcp",
+  "version": "0.1.0",
+  "description": "韭研公社 (jiuyangongshe.com) 数据 MCP 服务器：异动、时间轴、热榜、搜索、关注流",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "jiuyan-mcp": "src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0"
+  }
+}

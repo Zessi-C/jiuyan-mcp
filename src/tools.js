@@ -109,7 +109,7 @@ export const TOOLS = [
   {
     name: 'jiuyan_get_action_field',
     description:
-      '获取韭研公社「异动」当日板块字段列表（各板块的 action_field_id 与名称），是调用 jiuyan_get_action_list 的前置。需要登录（JIYAN_SESSION）。',
+      '获取韭研公社「异动」板块字段列表：每个板块含 action_field_id、名称与当日个股异动明细（web 版响应已内嵌 list，通常无需再调 jiuyan_get_action_list）。日期传非交易日时服务器自动回退到上一交易日；当日盘中可能仅有占位行（count=0）。需要登录。',
     inputSchema: {
       type: 'object',
       required: ['date'],
@@ -150,17 +150,19 @@ export const TOOLS = [
   {
     name: 'jiuyan_get_follow_feed',
     description:
-      '获取登录用户的关注流（自己关注的人的最新发言/文章）。需要登录（JIYAN_SESSION）。返回文章列表含标题、作者、时间与 article_id。',
+      '获取登录用户的关注流：自己关注的人(及官方精选)的最新文章/发言，返回分页列表（result[]，含标题、作者、时间、article_id、点赞评论数）。需要登录。实测端点 /api/v2/user/article/follow。',
     inputSchema: {
       type: 'object',
       properties: {
+        type: { ...int, description: '流类型（实测 0=默认关注流；其余取值未公开）', default: 0 },
         start: { ...int, description: '页码，从 1 开始', default: 1 },
         limit: { ...int, description: '每页条数', default: 10 },
       },
     },
     handler: async (a, client) =>
       (
-        await client.post('/api/v2/article/newest/list', {
+        await client.post('/api/v2/user/article/follow', {
+          type: a.type ?? 0,
           start: a.start ?? 1,
           limit: a.limit ?? 10,
         })

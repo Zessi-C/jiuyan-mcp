@@ -8,29 +8,30 @@ export const TOOLS = [
   {
     name: 'jiuyan_get_timeline',
     description:
-      '获取韭研公社「时间轴」：按日期分组的盘前/盘中事件流，每条含标题、关联文章 article_id、评级 timeline.grade、题材 theme_list 等。匿名可用。',
+      '获取韭研公社「时间轴」：返回按日期分组的数组（元素为 {date, list[]}），每条含标题、关联文章 article_id、评级 timeline.grade、题材 theme_list 等。date 支持 年(YYYY)/月(YYYY-MM)/日(YYYY-MM-DD)，服务端直接按粒度过滤；不传=当月。匿名可用。',
     inputSchema: {
       type: 'object',
       properties: {
-        start: { ...int, description: '页码，从 1 开始', default: 1 },
-        limit: { ...int, description: '每页条数（站点默认 20）', default: 20 },
-        date: { ...str, description: '可选。只保留该日期(YYYY-MM-DD)或该月份前缀(YYYY-MM)的分组', default: '' },
+        date: { ...str, description: 'YYYY / YYYY-MM / YYYY-MM-DD，空=当月', default: '' },
+        grade: { ...int, description: '评级过滤：0=全部 5=一星 3=三星 1=五星', default: 0 },
+        keyword: { ...str, description: '可选。站点关键词过滤（匹配时间轴条目，非文章正文）', default: '' },
+        theme_id: { ...str, description: '可选。题材 ID（来自站内时间轴标签页，如时间轴 URL 的 timeline_theme_id）', default: '' },
       },
     },
     handler: async (a, client) => {
       const json = await client.post('/api/v1/timeline/list', {
-        start: a.start ?? 1,
-        limit: a.limit ?? 20,
+        date: a.date ? String(a.date) : '',
+        grade: a.grade ?? 0,
+        keyword: a.keyword ? String(a.keyword) : '',
+        theme_id: a.theme_id ? String(a.theme_id) : '',
       });
-      const groups = Array.isArray(json.data) ? json.data : [];
-      const filtered = a.date ? groups.filter((g) => String(g.date || '').startsWith(a.date)) : groups;
-      return { ...json, data: filtered };
+      return json;
     },
   },
   {
     name: 'jiuyan_get_rank_board',
     description:
-      '获取韭研公社「热榜」：hot_search_list 热搜关键词榜 + hot_article_list 热门文章榜（含标题/热度/作者等）。匿名可用。',
+      '获取韭研公社「热榜」：hot_search_list 热搜关键词榜 + hot_article_list 热门文章榜 + hot_user_list 热门用户榜（含标题/热度/作者等）。匿名可用。',
     inputSchema: { type: 'object', properties: {} },
     handler: async (_a, client) => (await client.post('/api/v1/article/rank-board', {})).data,
   },
@@ -43,22 +44,21 @@ export const TOOLS = [
       required: ['keyword'],
       properties: {
         keyword: { ...str, description: '搜索关键词' },
-        order: { ...int, description: '排序：1=按热度 2=按时间', default: 1 },
+        order: { ...int, description: '排序：1=站点默认（综合/热度），其余取值返回按时间等其它序', default: 1 },
         limit: { ...int, description: '每页条数，站点默认 15', default: 15 },
-        page: { ...int, description: '页码，从 1 开始', default: 1 },
-        back_garden: { ...int, description: '板块过滤：0=全部(后花园关闭)', default: 0 },
+        page: { ...int, description: '页码，从 1 开始（站点按页号翻页）', default: 1 },
+        type: { ...str, description: '服务端必填，站点当前固定用 "1"，其它取值语义未公开', default: '1' },
+        back_garden: { ...int, description: '服务端必填（缺失报 12003），实测取值不影响结果，保持 0', default: 0 },
       },
     },
     handler: async (a, client) => {
-      const limit = a.limit ?? 15;
-      const page = a.page ?? 1;
       return (
         await client.post('/api/v2/article/search', {
           keyword: String(a.keyword),
           order: a.order ?? 1,
-          limit,
-          start: (page - 1) * limit,
-          type: '1',
+          limit: a.limit ?? 15,
+          start: a.page ?? 1,
+          type: String(a.type ?? '1'),
           back_garden: a.back_garden ?? 0,
         })
       ).data;
@@ -109,7 +109,7 @@ export const TOOLS = [
   {
     name: 'jiuyan_get_action_field',
     description:
-      '获取韭研公社「异动」板块字段列表：每个板块含 action_field_id、名称与当日个股异动明细（web 版响应已内嵌 list，通常无需再调 jiuyan_get_action_list）。日期传非交易日时服务器自动回退到上一交易日；当日盘中可能仅有占位行（count=0）。需要登录。',
+      '获取韭研公社「异动」当日板块字段列表：每条含 action_field_id、name(板块名)、count(个股数)、reason(板块逻辑)与 date。日期传非交易日时服务器自动回退到上一交易日；当日盘中字段可能尚未填充（count=0、action_field_id 为空）。需要登录。取到 action_field_id 后再调 jiuyan_get_action_list 拿个股明细。',
     inputSchema: {
       type: 'object',
       required: ['date'],
@@ -121,14 +121,14 @@ export const TOOLS = [
   {
     name: 'jiuyan_get_action_list',
     description:
-      '获取韭研公社「异动」某板块下的个股异动列表（股票名/代码/价格、涨停原因 expound、时间等）。需要登录（JIYAN_SESSION）。先用 jiuyan_get_action_field 拿 action_field_id。',
+      '获取韭研公社「异动」某板块下的个股异动列表（股票名/代码、涨停原因 expound、时间、涨跌幅等）。需要登录（JIYAN_SESSION）。action_field_id 来自 jiuyan_get_action_field，也可传 "recommend,<YYYY-MM-DD>" 取当日推荐池。start/limit 为服务端必填项（缺失报 12003），当前服务端会返回该板块全部个股。',
     inputSchema: {
       type: 'object',
       required: ['action_field_id'],
       properties: {
-        action_field_id: { ...str, description: '板块字段 ID（来自 jiuyan_get_action_field）' },
-        start: { ...int, description: '页码，从 1 开始', default: 1 },
-        limit: { ...int, description: '每页条数', default: 50 },
+        action_field_id: { ...str, description: '板块字段 ID（来自 jiuyan_get_action_field），或 "recommend,2026-09-10" 形式的推荐池' },
+        start: { ...int, description: '服务端必填（页码，实测取值不影响返回）', default: 1 },
+        limit: { ...int, description: '服务端必填（实测取值不影响返回）', default: 50 },
         sort_price: { ...int, description: '按价格排序方向（0 不排）', default: 0 },
         sort_range: { ...int, description: '按涨跌幅排序方向（0 不排）', default: 0 },
         sort_time: { ...int, description: '按时间排序方向（0 不排）', default: 0 },

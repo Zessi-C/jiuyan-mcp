@@ -19,9 +19,12 @@ function friendly(errCode, msg) {
     case '1':
       return `该数据需要登录（服务器返回: ${msg || '登录失效'}）。请设置环境变量 JIYAN_SESSION 为网页登录后的 SESSION cookie 值后重启服务。`;
     case '9':
-      return '此端点为旧版 APP API 且被版本门禁拦截（errCode 9），web API 不应出现此错误，请报告 issue。';
+      return '该端点为 APP 专用（版本门禁 errCode=9），web API 不可用，属预期行为。';
     case '110':
       return '签名校验失败（已尝试自动刷新仍被拒），站点签名机制可能升级。';
+    case '12000':
+    case '12003':
+      return `请求参数不合法: ${msg}（web 端参数名/必填项可能已调整）`;
     default:
       return msg ? `${msg} (errCode=${errCode})` : `业务错误 errCode=${errCode}`;
   }
@@ -57,11 +60,13 @@ export class JiuyanClient {
 
   /**
    * POST 一个 jystock-app 接口，返回完整响应信封。
-   * errCode=110 时自动重建签名并重试一次；其余非 0 errCode 抛 JiuyanError。
+   * 网络错误/HTTP 5xx 重试一次（站点偶发 502）；errCode=110 时重建签名并重试一次；
+   * 其余非 0 errCode 抛 JiuyanError。
    * @param {string} path 如 '/api/v1/timeline/list'
    * @param {object} body JSON 请求体
    */
   async post(path, body) {
+    let transientRetried = false;
     for (let attempt = 0; ; attempt++) {
       await this.#throttle();
       const headers = {
@@ -85,6 +90,12 @@ export class JiuyanClient {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         json = await res.json();
       } catch (e) {
+        const transient = /^HTTP 5\d\d$/.test(e.message) || e.name === 'TypeError' || e.name === 'AbortError';
+        if (transient && !transientRetried) {
+          transientRetried = true;
+          await sleep(1500);
+          continue; // 上游偶发 5xx / 连接层错误：重试一次
+        }
         throw new JiuyanError('network', `请求 ${path} 失败: ${e.message}`);
       }
 

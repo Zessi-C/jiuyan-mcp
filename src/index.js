@@ -11,7 +11,7 @@ import {
 import { JiuyanClient } from './api.js';
 import { TOOLS } from './tools.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const MAX_OUTPUT_CHARS = 100_000;
 const MAX_STRING_CHARS = 1_500;
 
